@@ -88,7 +88,7 @@ def wish_list(mode: str, last_id: int, page_num: int, fulfill: bool):
         sql
         .where(and_(table.c.fulfill.is_(fulfill),
                     table.c.openid == openid))
-        .order_by(nulls_last(desc(table.c.last_time)))
+        .order_by(desc(table.c.last_time))
         .limit(page_num)
     )
   res = engine.execute(sql).fetchall()
@@ -104,22 +104,28 @@ class WishUpdate(Schema):
   fulfill = fields.Boolean(load_default=None)
   count = fields.Integer(load_default=1, 
                          validate=[Range(min=0, max=10)])
+  wish = fields.String(load_default=None,
+                       validate=[Length(min=1, max=128)])
 
 
 @app.route('/api/wooden_fish/wish_update',
            methods=['POST'])
 @use_kwargs(WishUpdate)
-def wish_update(wish_id: int, fulfill: bool, count: int):
+def wish_update(wish_id: int, fulfill: bool, count: int, wish: str):
   engine: Engine = db.engine
   table = wish_table.table
+  openid = request.headers.get('X-WX-OPENID')
 
   values = dict(
     count=table.c.count + count
   )
   if fulfill is not None:
     values['fulfill'] = fulfill
+  if wish is not None:
+    values['wish'] = wish
   
   engine.execute(
-      table.update().values(**values).where(table.c.id == wish_id)
+      table.update().values(**values).where(table.c.id == wish_id, 
+                                            table.c.openid == openid)
   )
   return make_succ_response({'result': True})
