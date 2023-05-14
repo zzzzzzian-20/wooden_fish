@@ -109,7 +109,7 @@ class WishUpdate(Schema):
 @app.route('/api/wooden_fish/wish_update',
            methods=['POST'])
 @use_kwargs(WishUpdate)
-def wish_list(wish_id: int, fulfill: bool, count: int):
+def wish_update(wish_id: int, fulfill: bool, count: int):
   engine: Engine = db.engine
   table = wish_table.table
 
