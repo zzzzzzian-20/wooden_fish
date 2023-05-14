@@ -8,7 +8,7 @@ from webargs.flaskparser import use_kwargs
 
 from run import app
 from wxcloudrun import db
-from wxcloudrun.tables import wish_table
+from wxcloudrun.tables import wish as wish_table
 from wxcloudrun.response import make_succ_response
 
 
