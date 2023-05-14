@@ -38,4 +38,4 @@ EXPOSE 80
 # 写多行独立的CMD命令是错误写法！只有最后一行CMD命令会被执行，之前的都会被忽略，导致业务报错。
 # 请参考[Docker官方文档之CMD命令](https://docs.docker.com/engine/reference/builder/#cmd)
 # CMD ["python3", "run.py", "0.0.0.0", "80"]
-CMD ["gunicorn", "--bind", "0.0.0.0:80", "--workers", "4", "\"wxcloudrun:app\""]
+CMD ["gunicorn", "--bind", "0.0.0.0:80", "--workers", "4", "--chdir", "/app", "\"wxcloudrun:app\""]
