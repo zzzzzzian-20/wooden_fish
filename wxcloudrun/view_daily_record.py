@@ -59,7 +59,7 @@ WISH_FIELDS = ('id', 'create_time', 'update_time', 'last_time',
                'count', 'fulfill', 'wish')
 
 
-@app.route('/api/wooden_fish/wish/list', 
+@app.route('/api/wooden_fish/wish_list', 
            methods=['POST'])
 @use_kwargs(WishList)
 def wish_list(mode: str, last_id: int, page_num: int, fulfill: bool):
@@ -106,7 +106,7 @@ class WishUpdate(Schema):
                          validate=[Range(min=0, max=10)])
 
 
-@app.route('/api/wooden_fish/wish/update',
+@app.route('/api/wooden_fish/wish_update',
            methods=['POST'])
 @use_kwargs(WishUpdate)
 def wish_list(wish_id: int, fulfill: bool, count: int):
