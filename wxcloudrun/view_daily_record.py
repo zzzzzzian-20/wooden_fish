@@ -10,7 +10,6 @@ from sqlalchemy import asc
 from sqlalchemy import func
 from webargs.flaskparser import use_kwargs
 from sqlalchemy import and_
-from sqlalchemy import nulls_last
 
 from run import app
 from wxcloudrun import db
