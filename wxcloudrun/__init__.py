@@ -19,6 +19,7 @@ db = SQLAlchemy(app)
 
 # 加载控制器
 from wxcloudrun import views
+from wxcloudrun import view_daily_record
 
 # 加载配置
 app.config.from_object('config')
