@@ -15,7 +15,11 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql://{}:{}@{}/flask_demo'.format(con
                                                                              config.db_address)
 
 # 初始化DB操作对象
-db = SQLAlchemy(app)
+db = SQLAlchemy(app,
+                engine_options={'pool_pre_ping': True,
+                                'pool_recycle': 60 * 10,
+                                'pool_size': 1,
+                                'pool_use_lifo': True})
 
 # 加载控制器
 from wxcloudrun import views
