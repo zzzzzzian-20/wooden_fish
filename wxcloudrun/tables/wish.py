@@ -27,6 +27,7 @@ table = Table(
            nullable=True),
     Column('openid', String, nullable=True),
     Column('count', Integer, nullable=True),
+    Column('knock', Integer, nullable=True),
     Column('fulfill', Boolean, nullable=True),
     Column('wish', String, nullable=True)
 )
