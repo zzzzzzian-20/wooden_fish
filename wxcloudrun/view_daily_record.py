@@ -281,7 +281,7 @@ def wish_share_enter(share_id: str):
                              'share_content': res[0][1]})
 
 
-class WishUpdate(Schema):
+class WishShareUpdate(Schema):
   share_id = fields.String(required=True)
   count = fields.Integer(load_default=1,
                          validate=[Range(min=0, max=100)])
@@ -303,7 +303,7 @@ def get_wish_id_from_share_id(share_id):
 
 @app.route('/api/wooden_fish/wish_share_update',
            methods=['POST'])
-@use_kwargs(WishShareEnter)
+@use_kwargs(WishShareUpdate)
 def wish_share_update(share_id: str, count: int, knock: int):
   openid = request.headers.get('X-WX-OPENID')
   if openid is None:
