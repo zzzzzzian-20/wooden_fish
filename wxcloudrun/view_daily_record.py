@@ -1,25 +1,22 @@
-from flask import request
+from datetime import datetime, timedelta
+from functools import lru_cache
 from uuid import uuid4
+
+from flask import request
 from marshmallow import Schema, fields
-from marshmallow.validate import Length
-from marshmallow.validate import Range 
-from marshmallow.validate import OneOf 
+from marshmallow.validate import Length, OneOf, Range
+from sqlalchemy import and_, asc, desc, func, select, text
 from sqlalchemy.engine import Engine
-from sqlalchemy import select
-from sqlalchemy import desc
-from sqlalchemy import asc
-from sqlalchemy import func
 from webargs.flaskparser import use_kwargs
-from sqlalchemy import and_
-from sqlalchemy import or_
-from sqlalchemy import desc
 
 from run import app
 from wxcloudrun import db
+from wxcloudrun.response import make_err_response, make_succ_response
+from wxcloudrun.tables import share_knock as share_knock_table
 from wxcloudrun.tables import wish as wish_table
 from wxcloudrun.tables import wish_share as wish_share_table
-from wxcloudrun.response import make_succ_response
-from wxcloudrun.response import make_err_response
+
+WISH_SHARE_PREFIX = 'SH'
 
 
 class NewWish(Schema):
@@ -40,7 +37,7 @@ def new_wish(wish: str):
     conn.execute(
         table.insert().values(
             openid=openid,
-            wish=wish,
+            wish=wish
         )
     )
     res = conn.execute(
@@ -63,7 +60,7 @@ class WishList(Schema):
 
 
 WISH_FIELDS = ('id', 'create_time', 'update_time', 'last_time', 
-               'count', 'knock', 'fulfill', 'wish')
+               'count', 'knock', 'fulfill', 'wish', 'share_count')
 
 
 @app.route('/api/wooden_fish/wish_list', 
@@ -83,7 +80,8 @@ def wish_list(mode: str, last_id: int, page_num: int, fulfill: bool):
                table.c.count,
                table.c.knock,
                table.c.fulfill,
-               table.c.wish)
+               table.c.wish, 
+               table.c.share_count)
   if mode == 'list':
     sql = (
         sql
@@ -109,6 +107,56 @@ def wish_list(mode: str, last_id: int, page_num: int, fulfill: bool):
   return make_succ_response(result)
 
 
+class WishShareStats(Schema):
+  wish_id = fields.Integer(required=True, validate=[Range(min=0)])
+
+
+@app.route('/api/wooden_fish/wish_share_stats',
+           methods=['POST'])
+@use_kwargs(WishShareStats)
+def wish_stats(wish_id: int):
+  openid = request.headers.get('X-WX-OPENID')
+  if openid is None:
+    return make_err_response({'msg': 'not login'})
+  engine: Engine = db.engine
+  table = wish_table.table
+  helper_table = share_knock_table.table
+
+  sql = select(
+      table.c.helper_total,
+      table.c.share_count_total,
+      table.c.share_knock_total,
+      table.c.helper,
+      table.c.share_count,
+      table.c.share_knock
+  ).where(and_(table.c.id == wish_id,
+               table.c.openid == openid))
+  res = engine.execute(sql).fetchall()
+  if not res:
+    return make_err_response({'msg': 'wish not found'})
+  res = dict(zip(('helper_total',
+                  'share_count_total',
+                  'share_knock_total',
+                  'helper',
+                  'share_count',
+                  'share_knock'),
+                 res[0]))
+
+  last_week_sql = select(
+      func.count(helper_table.c.id).label('last_week_helper'),
+      func.sum(helper_table.c.count).label('last_week_count'),
+      func.sum(helper_table.c.knock).label('last_week_knock')
+  ).where(and_(helper_table.c.id == wish_id,
+               helper_table.c.create_time >= (datetime.now() - timedelta(days=7)).timestamp()))
+  helper_res = engine.execute(last_week_sql).fetchall()
+  helper_res = dict(zip(('last_week_helper',
+                         'last_week_count',
+                         'last_week_knock'),
+                        helper_res[0]))
+  res.update(helper_res)
+  return make_succ_response(res)
+
+
 class WishUpdate(Schema):
   wish_id = fields.Integer(required=True, validate=[Range(min=0)])
   fulfill = fields.Boolean(load_default=None)
@@ -119,23 +167,38 @@ class WishUpdate(Schema):
   wish = fields.String(load_default=None,
                        validate=[Length(min=1, max=128)])
   clear_record = fields.Boolean(load_default=False)
+  gather_shared = fields.Boolean(load_default=False)
 
 
 @app.route('/api/wooden_fish/wish_update',
            methods=['POST'])
 @use_kwargs(WishUpdate)
 def wish_update(wish_id: int, fulfill: bool, count: int, wish: str, knock: int,
-                clear_record: bool):
+                clear_record: bool, gather_shared: bool):
   openid = request.headers.get('X-WX-OPENID')
   if openid is None:
     return make_err_response({'msg': 'not login'})
   engine: Engine = db.engine
   table = wish_table.table
 
-  values = dict()
+  values = dict(last_time=text('CURRENT_TIMESTAMP'))
   if clear_record:
     values['count'] = 0
     values['knock'] = 0
+  elif gather_shared:
+    values.update(
+      # add to total
+      count=table.c.count + table.c.share_count,
+      knock=table.c.knock + table.c.share_knock,
+      # add to helper total
+      helper_total=table.c.helper_total + table.c.helper,
+      share_count_total=table.c.share_count_total + table.c.share_count,
+      share_knock_total=table.c.share_knock_total + table.c.share_knock,
+      # remove
+      helper=0, 
+      share_count=0, 
+      share_knock=0
+    )
   else:
     if count:
       values['count'] = table.c.count + count
@@ -175,7 +238,7 @@ def wish_share_create(wish_id: int, share_content: bool):
   res = engine.execute(sql).fetchall()
   if not res:
     return make_err_response({'msg': 'wish not found'})
-  share_id = str(uuid4())
+  share_id = WISH_SHARE_PREFIX + uuid4().hex[:16]
 
   share_vals = {
       'share_id': share_id,
@@ -226,6 +289,18 @@ class WishUpdate(Schema):
                          validate=[Range(min=0, max=10000)])
 
 
+@lru_cache(maxsize=64)
+def get_wish_id_from_share_id(share_id):
+  table = wish_share_table.table
+  engine: Engine = db.engine
+  res = engine.execute(
+      select(table.c.wish_id).where(table.c.share_id == share_id).limit(1)
+  ).fetchall()
+  if not res:
+    return
+  return res[0][0]
+
+
 @app.route('/api/wooden_fish/wish_share_update',
            methods=['POST'])
 @use_kwargs(WishShareEnter)
@@ -234,75 +309,27 @@ def wish_share_update(share_id: str, count: int, knock: int):
   if openid is None:
     return make_err_response({'msg': 'not login'})
 
+  wish_id = get_wish_id_from_share_id(share_id)
+  if wish_id is None:
+    return make_err_response({'msg': 'wish not found'})
   engine: Engine = db.engine
-  table = wish_share_table.table
+  table = wish_table.table
+  insert_table = share_knock_table.table
 
+  insert_val = {'wish_id': wish_id, 'openid': openid}
   values = {}
   if count:
-    values['count'] = table.c.count + count
+    insert_val['count'] = count
+    values['helper'] = table.c.helper + 1
+    values['share_count'] = table.c.share_count + count
   if knock:
-    values['knock'] = table.c.knock + knock
+    insert_val['knock'] = knock
+    values['share_knock'] = table.c.share_knock + knock
   if values:
     engine.execute(
-        table.update().values(**values).where(table.c.share_id == share_id)
+        table.update().values(**values).where(table.c.id == wish_id)
     )
-  return make_succ_response({'result': True})
-
-
-class WishShareList(Schema):
-  wish_id = fields.Integer(required=True)
-  page_num = fields.Integer(load_default=10, 
-                            validate=[Range(min=1, max=100)])
-
-
-@app.route('/api/wooden_fish/wish_share_list',
-           methods=['POST'])
-@use_kwargs(WishShareList)
-def wish_share_list(wish_id: str, page_num):
-  openid = request.headers.get('X-WX-OPENID')
-  if openid is None:
-    return make_err_response({'msg': 'not login'})
-
-  engine: Engine = db.engine
-  table = wish_share_table.table
-  origin_table = wish_table.table
-  
-  j = table.join(origin_table, onclause=table.c.wish_id == origin_table.c.id)
-  sql = (select(table.c.share_id, table.c.count, table.c.knock)
-         .select_from(j)
-         .where(and_(origin_table.c.wish_id == wish_id,
-                     origin_table.c.openid == openid,
-                     or_(table.c.count > 0,
-                         table.c.knock > 0)))
-         .order_by(desc(table.c.id))
-         .limit(page_num))
-
-  res = engine.execute(sql).fetchall()
-  fields = ('share_id', 'count', 'knock')
-  result = {i: list() for i in fields}
-  for i in res:
-    for idx, k in enumerate(fields):
-      result[k].append(i[idx])
-
-  return make_succ_response({'result': result})
-
-
-class WishShareClear(Schema):
-  wish_id = fields.Integer(required=True)
-
-
-@app.route('/api/wooden_fish/wish_share_clear',
-           methods=['POST'])
-@use_kwargs(WishShareClear)
-def wish_share_clear(wish_id: str):
-  openid = request.headers.get('X-WX-OPENID')
-  if openid is None:
-    return make_err_response({'msg': 'not login'})
-
-  engine: Engine = db.engine
-  table = wish_share_table.table
-
   engine.execute(
-      table.update().values(count=0, knock=0).where(table.c.wish_id == wish_id)
+      insert_table.insert().values(**insert_val)
   )
   return make_succ_response({'result': True})
