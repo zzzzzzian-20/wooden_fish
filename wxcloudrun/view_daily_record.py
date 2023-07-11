@@ -146,7 +146,7 @@ def wish_stats(wish_id: int):
       func.count(helper_table.c.id).label('last_week_helper'),
       func.sum(helper_table.c.count).label('last_week_count'),
       func.sum(helper_table.c.knock).label('last_week_knock')
-  ).where(and_(helper_table.c.id == wish_id,
+  ).where(and_(helper_table.c.wish_id == wish_id,
                helper_table.c.create_time >= (datetime.now() - timedelta(days=7)).timestamp()))
   helper_res = engine.execute(last_week_sql).fetchall()
   helper_res = dict(zip(('last_week_helper',
