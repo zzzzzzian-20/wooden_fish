@@ -233,7 +233,7 @@ def wish_share_create(wish_id: int, share_content: bool):
   origin_table = wish_table.table
   table = wish_share_table.table
 
-  sql = select(origin_table.c.wish).where(and_(origin_table.c.wish_id == wish_id,
+  sql = select(origin_table.c.wish).where(and_(origin_table.c.id == wish_id,
                                                origin_table.c.openid == openid))
   res = engine.execute(sql).fetchall()
   if not res:
