@@ -12,6 +12,7 @@ table = Table(
     MetaData(),
     Column('id', Integer, primary_key=True, index=True),
     Column('wish_id', Integer, index=True),
+    Column('share_session', String, index=True),
     Column('create_time',
            TIMESTAMP,
            server_default=text('CURRENT_TIMESTAMP'),

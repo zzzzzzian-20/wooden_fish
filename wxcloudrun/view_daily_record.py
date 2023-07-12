@@ -283,6 +283,7 @@ def wish_share_enter(share_id: str):
 
 class WishShareUpdate(Schema):
   share_id = fields.String(required=True)
+  share_session = fields.String(load_default=None)
   count = fields.Integer(load_default=1,
                          validate=[Range(min=0, max=100)])
   knock = fields.Integer(load_default=None,
@@ -304,7 +305,7 @@ def get_wish_id_from_share_id(share_id):
 @app.route('/api/wooden_fish/wish_share_update',
            methods=['POST'])
 @use_kwargs(WishShareUpdate)
-def wish_share_update(share_id: str, count: int, knock: int):
+def wish_share_update(share_id: str, share_session: str, count: int, knock: int):
   openid = request.headers.get('X-WX-OPENID')
   if openid is None:
     return make_err_response({'msg': 'not login'})
@@ -315,8 +316,10 @@ def wish_share_update(share_id: str, count: int, knock: int):
   engine: Engine = db.engine
   table = wish_table.table
   insert_table = share_knock_table.table
-
   insert_val = {'wish_id': wish_id, 'openid': openid}
+  if share_session is None:
+    insert_val['share_session'] = uuid4().hex
+
   values = {}
   if count:
     insert_val['count'] = count
@@ -329,7 +332,19 @@ def wish_share_update(share_id: str, count: int, knock: int):
     engine.execute(
         table.update().values(**values).where(table.c.id == wish_id)
     )
-  engine.execute(
-      insert_table.insert().values(**insert_val)
+  if share_session is None:
+    engine.execute(
+        insert_table.insert().values(**insert_val)
+    )
+  else:
+    engine.execute(
+        insert_table
+        .update()
+        .values(count=insert_table.c.count + insert_val.get('count', 0),
+                knock=insert_table.c.knock + insert_val.get('knock', 0))
+        .where(insert_table.c.share_session == share_session)
+    )
+  return make_succ_response(
+      {'result': True,
+       'share_session': share_session or insert_val['share_session']}
   )
-  return make_succ_response({'result': True})
