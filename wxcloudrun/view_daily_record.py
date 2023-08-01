@@ -259,6 +259,32 @@ class WishShareEnter(Schema):
   share_id = fields.String(required=True)
 
 
+@lru_cache(maxsize=64)
+def get_openid_from_wishid(wish_id) -> str:
+  engine: Engine = db.engine
+  table = wish_table.table
+  sql = (select(table.c.openid)
+         .where(table.c.id == wish_id)
+         .limit(1))
+  res = engine.execute(sql).fetchall()
+  if not res:
+    return make_err_response({'msg': 'wish not found'})
+  return res[0][0]
+
+
+@lru_cache(maxsize=64)
+def get_wish_content_from_share_id(share_id):
+  engine: Engine = db.engine
+  table = wish_share_table.table
+  sql = (select(table.c.wish,
+                table.c.share_content,
+                table.c.wish_id)
+         .where(table.c.share_id == share_id)
+         .limit(1))
+  res = engine.execute(sql).fetchall()
+  return res
+
+
 @app.route('/api/wooden_fish/wish_share_enter',
            methods=['POST'])
 @use_kwargs(WishShareEnter)
@@ -267,18 +293,14 @@ def wish_share_enter(share_id: str):
   if openid is None:
     return make_err_response({'msg': 'not login'})
 
-  engine: Engine = db.engine
-  table = wish_share_table.table
-
-  sql = (select(table.c.wish,
-                table.c.share_content)
-         .where(table.c.share_id == share_id))
-
-  res = engine.execute(sql).fetchall()
+  res = get_wish_content_from_share_id(share_id)
   if not res:
     return make_err_response({'msg': 'wish not found'})
+  wish_id = res[0][2]
+  wish_openid = get_openid_from_wishid(wish_id)
   return make_succ_response({'wish': res[0][0],
-                             'share_content': res[0][1]})
+                             'share_content': res[0][1], 
+                             'self_share': wish_openid == openid})
 
 
 class WishShareUpdate(Schema):
